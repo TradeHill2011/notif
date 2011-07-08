@@ -34,7 +34,7 @@ class FanoutConnection(object):
 	def yell(self, who, what):
 		data = cjson.encode( {'to': who, 'msg': what} )
 		if self._socket:
-			msg = (unicode(len(data)) + u'\n' + data ).encode('utf-8')
+			msg = (unicode(len(data)) + u'\n' + data + 'BYE\n' ).encode('utf-8')
 			try:
 				self._socket.send(msg)
 			except:
