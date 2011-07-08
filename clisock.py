@@ -2,8 +2,6 @@ import socket
 import cjson
 import traceback
 
-# s.settimeout(0.0); s.setblocking(1)
-
 class FanoutConnection(object):
 	def __init__(self, HOST='localhost', PORT=11511):
 		self._socket = None
