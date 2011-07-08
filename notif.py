@@ -15,20 +15,27 @@ class IndexHandler(tornado.web.RequestHandler):
 
 class ChatConnection(tornadio.SocketConnection):
     # Class level variable
-    participants = set()
 
     def on_open(self, *args, **kwargs):
-        queue.master.get('EVERYONE').subscribe(self)
+        self.subscribed = set()
 
     def on_message(self, message):
-        queue.master.get('EVERYONE').send(message)
-        print message
+        if message['command'] == 'subscribe':
+            for channel in message['channels']:
+                print 'subscribing', channel
+                queue.master.get(channel).subscribe(self)
+                self.subscribed.add(channel)
 
     def on_close(self):
-        queue.master.get('EVERYONE').unsubscribe(self)
+        for channel in self.subscribed:
+            try:
+                queue.master.get(channel).unsubscribe(self)
+            except:
+                pass
+        self.subscribed.clear()
 
     def envelope_received(self, envelope):
-        self.send( envelope['msg'] )
+        self.send( envelope )
 
 #use the routes classmethod to build the correct resource
 ChatRouter = tornadio.get_router(ChatConnection)

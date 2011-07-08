@@ -6,34 +6,21 @@
   <script>WEB_SOCKET_SWF_LOCATION = 'http://cdn.socket.io/stable/WebSocketMain.swf';</script>
   <script>
     window.onload = function() {
-
         var s = new io.Socket(window.location.hostname, {port: 8001, rememberTransport: false});
         s.connect();
 
         s.addEvent('connect', function() {
-            s.send('New Client');
+            s.send( {'command': 'subscribe', 'channels': ['EVERYONE', 'A47CC'] } );
         });
 
         s.addEvent('message', function(data) {
-            $("#chat").append("<div>" + data + "</div>");
-        });
-
-        //send the message when submit is clicked
-        $('#chatform').submit(function (evt) {
-            var line = $('#chatform [type=text]').val()
-            $('#chatform [type=text]').val('')
-            s.send(line);
-            return false;
+            $("#log").append("<div>" + data['to'] + ': ' + data['msg'] + "</div>");
         });
     };
 </script>
 </head>
 <body>
-<div id="chat" style="width: 60em; height: 20em; overflow:auto; border: 1px solid black">
+<div id="log" style="width: 60em; height: 20em; overflow:auto; border: 1px solid black">
 </div>
-<form id="chatform">
-<input type="text" />
-<input type="submit" />
-</form>
 </body>
 </html>
