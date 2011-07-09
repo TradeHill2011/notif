@@ -43,12 +43,15 @@ ChatRouter = tornadio.get_router(ChatConnection)
 #configure the Tornado application
 application = tornado.web.Application(
     [(r"/", IndexHandler), ChatRouter.route()],
-    enabled_protocols = ['websocket',
-                         'flashsocket',
-                         'xhr-multipart',
-                         'xhr-polling'],
-    flash_policy_port = 843,
-    flash_policy_file = op.join(ROOT, 'flashpolicy.xml'),
+    enabled_protocols = [
+                         'websocket',
+                         # 'flashsocket',
+                         'htmlfile',
+                         'xhr-polling',
+                         'jsonp-polling',
+                         ],
+    # flash_policy_port = 843,
+    # flash_policy_file = op.join(ROOT, 'flashpolicy.xml'),
     socket_io_port = 8001
 )
 
