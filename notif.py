@@ -1,4 +1,6 @@
 from os import path as op
+import os
+import sys
 import queue
 
 import tornado.web
@@ -46,13 +48,15 @@ application = tornado.web.Application(
     enabled_protocols = [
                          'websocket',
                          # 'flashsocket',
-                         'htmlfile',
-                         'xhr-polling',
+#                         'htmlfile',
+#                         'xhr-polling',
                          'jsonp-polling',
                          ],
     # flash_policy_port = 843,
     # flash_policy_file = op.join(ROOT, 'flashpolicy.xml'),
-    socket_io_port = 8001
+    socket_io_port = sys.argv[1],
+    static_path=os.path.join(os.path.dirname(__file__), "static"),
+    secure=True,
 )
 
 if __name__ == "__main__":
@@ -61,4 +65,7 @@ if __name__ == "__main__":
 
     queue.start_queue()
 
-    tornadio.server.SocketServer(application)
+    tornadio.server.SocketServer(application, xheaders=True, ssl_options={
+           "certfile": "/root/notify.tradehill.com.crt",
+           "keyfile": "/root/dec.key",
+       })
