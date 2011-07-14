@@ -3,7 +3,7 @@ import cjson
 import traceback
 
 class FanoutConnection(object):
-	def __init__(self, HOST='localhost', PORT=11511):
+	def __init__(self, HOST='notify.tradehill.com', PORT=11511):
 		self._socket = None
 
 		s = None
