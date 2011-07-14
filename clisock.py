@@ -32,18 +32,26 @@ class FanoutConnection(object):
 	def yell(self, who, what):
 		data = cjson.encode( {'to': who, 'msg': what} )
 		if self._socket:
-			msg = (unicode(len(data)) + u'\n' + data + 'BYE\n' ).encode('utf-8')
+			msg = (unicode(len(data)) + u'\n' + data).encode('utf-8')
 			try:
 				self._socket.send(msg)
 			except:
 				traceback.print_exc()
 				self._socket = None
 
+	def close(self):
+		try:
+			self._socket.send('BYE\n')
+		except:
+			pass
+		self._socket = None
+
 def main():
 	conn = FanoutConnection()
 	conn.yell( 'EVERYONE', 'frob' )
 	conn.yell( 'A47CC', 'secret' )
 	conn.yell( 'LOST', 'lost' )
+	conn.close()
 
 if __name__ == '__main__':
 	main()
