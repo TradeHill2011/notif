@@ -7,7 +7,7 @@
   <script>
     window.onload = function() {
         var s = new io.Socket(window.location.hostname, {
-                              port: 443, 
+                              port: 8443, 
                               rememberTransport: false, 
                               transports: [
                                 'websocket', 
@@ -15,13 +15,13 @@
                                 //'htmlfile', 
                                 //'xhr-polling', 
                                 'jsonp-polling'
-                              ],
-                              secure: true
+                              ]
+                              // secure: true
                      });
         s.connect();
 
         s.addEvent('connect', function() {
-            s.send( {'command': 'subscribe', 'channels': ['EVERYONE', 'A47CC'] } );
+            s.send( {'command': 'subscribe', 'channels': ['EVERYONE', '#e37ad91c9c2a0eafb3cfe426140d191c'] } );
         });
 
         s.addEvent('message', function(data) {

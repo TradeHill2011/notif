@@ -8,6 +8,28 @@ import tornadio
 import tornadio.router
 import tornadio.server
 
+import imp
+imp.find_module('settings')
+import settings
+from django.core.management import setup_environ
+setup_environ(settings)
+
+from django.conf import settings
+
+from django.utils.importlib import import_module
+engine = import_module(settings.SESSION_ENGINE)
+
+from django.contrib.auth import *
+def get_user_by_session(session):
+    try:
+        user_id = session[SESSION_KEY]
+        backend_path = session[BACKEND_SESSION_KEY]
+        backend = load_backend(backend_path)
+        user = backend.get_user(user_id) or None
+    except KeyError:
+        user = None
+    return user
+
 ROOT = op.normpath(op.dirname(__file__))
 
 class IndexHandler(tornado.web.RequestHandler):
@@ -24,9 +46,19 @@ class ChatConnection(tornadio.SocketConnection):
     def on_message(self, message):
         if message['command'] == 'subscribe':
             for channel in message['channels']:
-                print 'subscribing', channel
-                queue.master.get(channel).subscribe(self)
-                self.subscribed.add(channel)
+                print 'asked for', channel
+                if channel.startswith('#'):
+                    print 'IS SESSIONID'
+                    session = engine.SessionStore(channel[1:])
+                    user = get_user_by_session(session)
+                    if user:
+                        self.subscribe( '@' + user.username )
+                self.subscribe(channel)
+
+    def subscribe(self, channel):
+        print 'subscribing', channel
+        queue.master.get(channel).subscribe(self)
+        self.subscribed.add(channel)
 
     def on_close(self):
         for channel in self.subscribed:
@@ -57,6 +89,7 @@ application = tornado.web.Application(
     socket_io_port = sys.argv[1],
     static_path=os.path.join(os.path.dirname(__file__), "static"),
     secure=True,
+    debug=True
 )
 
 if __name__ == "__main__":
@@ -65,7 +98,9 @@ if __name__ == "__main__":
 
     queue.start_queue()
 
-    tornadio.server.SocketServer(application, xheaders=True, ssl_options={
+    tornadio.server.SocketServer(application, xheaders=True, 
+        ssl_options={
            "certfile": "/root/notify.tradehill.com.crt",
            "keyfile": "/root/dec.key",
-       })
+       }
+       )
