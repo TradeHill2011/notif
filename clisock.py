@@ -1,5 +1,5 @@
 import socket
-import cjson
+# import cjson
 import traceback
 
 import imp
@@ -10,6 +10,17 @@ setup_environ(settings)
 
 from django.conf import settings
 
+import json
+from datetime import datetime
+from decimal import *
+
+class CustomEncoder(json.JSONEncoder):
+  def default(self, o, markers=None):
+    if isinstance(o, Decimal):
+      return str(o);
+    elif isinstance(o, datetime):
+      return str(o);
+    return json.JSONEncoder.default(self, o)
 
 class FanoutConnection(object):
     def __init__(self, HOST=settings.FANOUT_HOST, PORT=settings.FANOUT_PORT):
@@ -38,10 +49,11 @@ class FanoutConnection(object):
         else:
             print "Can't connect to fanout server."
 
-    def yell(self, who, what):
-        data = cjson.encode( {'to': who, 'msg': what} )
+    def yell(self, who, data=None, json_data=None):
+        if not json_data:
+            json_data = json.dumps( {'to': who, 'msg': data}, cls=CustomEncoder )
         if self._socket:
-            msg = (unicode(len(data)) + u'\n' + data).encode('utf-8')
+            msg = (unicode(len(json_data)) + u'\n' + json_data).encode('utf-8')
             try:
                 self._socket.send(msg)
             except:
