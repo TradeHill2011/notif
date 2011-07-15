@@ -61,7 +61,7 @@ class Queue:
     def kill(self):
         self.master.kill_queue(self.name)
 
-def start_queue():
+def start_queue(host, port):
     # print 'Starting Queue'
     global master
-    master = QueueMaster('127.0.0.1', 11511)
+    master = QueueMaster(host, port)

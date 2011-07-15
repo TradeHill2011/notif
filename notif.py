@@ -74,33 +74,45 @@ class ChatConnection(tornadio.SocketConnection):
 #use the routes classmethod to build the correct resource
 ChatRouter = tornadio.get_router(ChatConnection)
 
-#configure the Tornado application
-application = tornado.web.Application(
-    [(r"/", IndexHandler), ChatRouter.route()],
-    enabled_protocols = [
-                         'websocket',
-                         # 'flashsocket',
-#                         'htmlfile',
-#                         'xhr-polling',
-                         'jsonp-polling',
-                         ],
+kwargs = dict(
+    enabled_protocols = settings.NOTIFY_PROTOCOLS,
     # flash_policy_port = 843,
     # flash_policy_file = op.join(ROOT, 'flashpolicy.xml'),
-    socket_io_port = sys.argv[1],
+    socket_io_port = settings.NOTIFY_PORT,
     static_path=os.path.join(os.path.dirname(__file__), "static"),
-    secure=True,
-    debug=True
 )
+
+if settings.NOTIFY_SECURE:
+    kwargs['secure'] = True
+
+if not settings.PRODUCTION:
+    kwargs['debug'] = True
+
+#configure the Tornado application
+application = tornado.web.Application(
+        [(r"/", IndexHandler), ChatRouter.route()], 
+        **kwargs
+    )
 
 if __name__ == "__main__":
     import logging
     logging.getLogger().setLevel(logging.DEBUG)
 
-    queue.start_queue()
+    queue.start_queue(settings.FANOUT_HOST, settings.FANOUT_PORT)
 
-    tornadio.server.SocketServer(application, xheaders=True, 
+    ssl_options = None
+    if settings.NOTIFY_SECURE:
         ssl_options={
-           "certfile": "/root/notify.tradehill.com.crt",
-           "keyfile": "/root/dec.key",
-       }
-       )
+               "certfile": "/root/notify.tradehill.com.crt",
+               "keyfile": "/root/dec.key",
+           }
+    
+    xheaders = False
+
+    if not settings.NOTIFY_SECURE:
+        xheaders = True
+
+    tornadio.server.SocketServer(application, 
+        xheaders=xheaders, 
+        ssl_options=ssl_options
+    )
