@@ -35,7 +35,7 @@ ROOT = op.normpath(op.dirname(__file__))
 class IndexHandler(tornado.web.RequestHandler):
     """Regular HTTP handler to serve the chatroom page"""
     def get(self):
-        self.render("index.html")
+        self.write( self.open('flashpolicy.xml').read() )
 
 class ChatConnection(tornadio.SocketConnection):
     # Class level variable
@@ -76,10 +76,11 @@ ChatRouter = tornadio.get_router(ChatConnection)
 
 kwargs = dict(
     enabled_protocols = settings.NOTIFY_PROTOCOLS,
-    # flash_policy_port = 843,
-    # flash_policy_file = op.join(ROOT, 'flashpolicy.xml'),
+    flash_policy_port = 843,
+    flash_policy_file = op.join(ROOT, 'flashpolicy.xml'),
     socket_io_port = settings.NOTIFY_PORT,
-    static_path=os.path.join(os.path.dirname(__file__), "static"),
+    # static_path=os.path.join(os.path.dirname(__file__), "static"),
+    # static_url_prefix='/',
 )
 
 if settings.NOTIFY_SECURE:
@@ -90,7 +91,7 @@ if not settings.PRODUCTION:
 
 #configure the Tornado application
 application = tornado.web.Application(
-        [(r"/", IndexHandler), ChatRouter.route()], 
+        [(r"/static/flashpolicy.xml", IndexHandler), ChatRouter.route()], 
         **kwargs
     )
 
