@@ -27,7 +27,14 @@ class FanoutConnection(object):
         self._socket = None
 
         s = None
-        for res in socket.getaddrinfo(HOST, PORT, socket.AF_UNSPEC, socket.SOCK_STREAM):
+        hostinfo = []
+        try:
+            hostinfo = socket.getaddrinfo(HOST, PORT, socket.AF_UNSPEC, socket.SOCK_STREAM)
+        except:
+            import traceback
+            traceback.print_exc()
+            print "can't resolve", HOST, PORT
+        for res in hostinfo:
             af, socktype, proto, canonname, sa = res
             try:
                 s = socket.socket(af, socktype, proto)
