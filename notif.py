@@ -39,9 +39,14 @@ class IndexHandler(tornado.web.RequestHandler):
 
 class ChatConnection(tornadio.SocketConnection):
     # Class level variable
+    conns = {}
 
     def on_open(self, *args, **kwargs):
         self.subscribed = set()
+
+        if settings.MOBILE:
+            for conn in self.conns.keys():
+                self.send( {'to': 'INITIAL', 'msg': {'command': 'new', 'name': conn}} )
 
     def on_message(self, message):
         if message['command'] == 'subscribe':
@@ -54,6 +59,19 @@ class ChatConnection(tornadio.SocketConnection):
                     if user:
                         self.subscribe( '@' + user.username )
                 self.subscribe(channel)
+        else:
+            print 'COMMAND', message, settings.MOBILE
+            if settings.MOBILE and message['command'] == 'registerpos':
+                self.name = message['name']
+                self.conns[ self.name ] = self
+                self.lat, self.lng = (message['lat'], message['lng'])
+                if self.name:
+                    self.sendAllNearbyButSelf( {'command': 'new', 'name': self.name} )
+
+    def sendAllNearbyButSelf(self, msg):
+        for name, conn in self.conns.items():
+            if name != self.name:
+                conn.send( {'to': name, 'msg': msg} )
 
     def subscribe(self, channel):
         print 'subscribing', channel
@@ -76,8 +94,8 @@ ChatRouter = tornadio.get_router(ChatConnection)
 
 kwargs = dict(
     enabled_protocols = settings.NOTIFY_PROTOCOLS,
-    flash_policy_port = 843,
-    flash_policy_file = op.join(ROOT, 'flashpolicy.xml'),
+    # flash_policy_port = 843,
+    # flash_policy_file = op.join(ROOT, 'flashpolicy.xml'),
     socket_io_port = settings.NOTIFY_PORT,
     #static_path=os.path.join(os.path.dirname(__file__), "static"),
     #static_url_prefix='/static/',
