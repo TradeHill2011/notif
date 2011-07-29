@@ -37,60 +37,124 @@ class IndexHandler(tornado.web.RequestHandler):
     def get(self):
         self.write( open( os.path.join(ROOT, 'flashpolicy.xml') ).read() )
 
-class ChatConnection(tornadio.SocketConnection):
+namelist = open('/usr/share/dict/propernames').readlines()
+import random
+
+class NotifConnection(tornadio.SocketConnection):
     # Class level variable
-    conns = {}
+    connection_store = {}
+    name = None
+    user = None
 
     def on_open(self, *args, **kwargs):
         self.subscribed = set()
 
-        if settings.MOBILE:
-            for conn in self.conns.keys():
-                self.send( {'to': 'INITIAL', 'msg': {'command': 'new', 'name': conn}} )
+    def user_login(self, channel):
+        if self.user:
+            print 'CONNECTION REUSE - DYING'
+            self.unsubscribe_all()
+            self.close()
+            return
+        session = engine.SessionStore(channel[1:])
+        self.user = get_user_by_session(session)
+        self.session_key = channel[1:]
+        self.subscribe( '#' + self.session_key )
+        if self.user:
+            self.subscribe( '@' + self.user.username )
+
+            self.connection_store.setdefault(self.user.username, set()).add(self)
+
+            for connection_name in self.connection_store.keys():
+                if self.user.username != connection_name: # inform me about all users
+                    self.send( {'to': '@' + self.user.username, 'msg': {'command': 'hello', 'name': connection_name}} )
+            if len( self.connection_store.setdefault(self.user.username, set()) ) == 1: # hi, i'm new
+                self.sendToAllNearbyButSelf( {'command': 'hello', 'name': self.user.username } )
+
+    def user_logout(self, channel):
+        print 'DYING INTENTIONALLY'
+        self.unsubscribe_all()
+        self.close()
 
     def on_message(self, message):
         if message['command'] == 'subscribe':
             for channel in message['channels']:
                 print 'asked for', channel
                 if channel.startswith('#'):
-                    print 'IS SESSIONID'
-                    session = engine.SessionStore(channel[1:])
-                    user = get_user_by_session(session)
-                    if user:
-                        self.subscribe( '@' + user.username )
-                self.subscribe(channel)
+                    self.user_login(channel)
+                elif channel.startswith('@'):
+                    print 'SECURITY PROBLEM @ in channel', channel
+                else:
+                    self.subscribe(channel)
+        elif message['command'] == 'unsubscribe':
+            for channel in message['channels']:
+                if channel.startswith('#'):
+                    self.user_logout(channel)
+                elif channel.startswith('@'):
+                    print 'SECURITY PROBLEM @ in channel', channel
+                else:
+                    self.unsubscribe(channel)
         else:
-            print 'COMMAND', message, settings.MOBILE
-            if settings.MOBILE and message['command'] == 'registerpos':
-                self.name = message['name']
-                self.conns[ self.name ] = self
-                self.lat, self.lng = (message['lat'], message['lng'])
-                if self.name:
-                    self.sendAllNearbyButSelf( {'command': 'new', 'name': self.name} )
+            print 'COMMAND', message
 
-    def sendAllNearbyButSelf(self, msg):
-        for name, conn in self.conns.items():
-            if name != self.name:
-                conn.send( {'to': name, 'msg': msg} )
+    def sendToAllNearbyButSelf(self, msg):
+        print 'SENDTOALLBUT', self.user.username, self.connection_store
+        for name, conns in self.connection_store.items():
+            if name != self.user.username:
+                print 'SENDING', name, conns, self.user.username
+                for conn in conns:
+                    try:
+                        conn.send( {'to': '@' + name, 'msg': msg} )
+                    except:
+                        pass
 
     def subscribe(self, channel):
         print 'subscribing', channel
         queue.master.get(channel).subscribe(self)
         self.subscribed.add(channel)
 
+    def unsubscribe(self, channel):
+        print 'unsubscribing', channel
+        try:
+            queue.master.get(channel).unsubscribe(self)
+        except:
+            pass
+        try:
+            self.subscribed.remove(channel)
+        except:
+            pass
+    
+    def unsubscribe_all(self):
+        for channel in list(self.subscribed):
+            self.unsubscribe(channel)
+
     def on_close(self):
+        if self.user and self.user.username:
+            print 'CLOSING', self.user.username
+            try:
+                self.connection_store[self.user.username].remove(self)
+            except:
+                pass
+            if self.user and self.user.username and (not self.connection_store.get(self.user.username, None)):
+                try:
+                    del self.connection_store[self.user.username]
+                except:
+                    pass
         for channel in self.subscribed:
             try:
                 queue.master.get(channel).unsubscribe(self)
             except:
                 pass
         self.subscribed.clear()
+        if self.user and self.user.username:
+            if not self.connection_store.get(self.user.username, None):
+                self.sendToAllNearbyButSelf( {'command': 'bye', 'name': self.user.username } )
+        self.user = None
 
     def envelope_received(self, envelope):
         self.send( envelope )
 
 #use the routes classmethod to build the correct resource
-ChatRouter = tornadio.get_router(ChatConnection)
+NotifRouter = tornadio.get_router(NotifConnection)
 
 kwargs = dict(
     enabled_protocols = settings.NOTIFY_PROTOCOLS,
@@ -109,7 +173,7 @@ if not settings.PRODUCTION:
 
 #configure the Tornado application
 application = tornado.web.Application(
-        [ChatRouter.route()], 
+        [NotifRouter.route()], 
         **kwargs
     )
 
