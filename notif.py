@@ -37,9 +37,6 @@ class IndexHandler(tornado.web.RequestHandler):
     def get(self):
         self.write( open( os.path.join(ROOT, 'flashpolicy.xml') ).read() )
 
-namelist = open('/usr/share/dict/propernames').readlines()
-import random
-
 class NotifConnection(tornadio.SocketConnection):
     # Class level variable
     connection_store = {}
@@ -52,15 +49,19 @@ class NotifConnection(tornadio.SocketConnection):
     def user_login(self, channel):
         if self.user:
             print 'CONNECTION REUSE - DYING'
-            self.unsubscribe_all()
+            # self.unsubscribe_all()
             self.close()
             return
         session = engine.SessionStore(channel[1:])
         self.user = get_user_by_session(session)
+        print 'WHAT USER', self.user, session
         self.session_key = channel[1:]
         self.subscribe( '#' + self.session_key )
         if self.user:
             self.subscribe( '@' + self.user.username )
+
+            if not settings.MOBILE:
+                return
 
             self.connection_store.setdefault(self.user.username, set()).add(self)
 
@@ -72,7 +73,7 @@ class NotifConnection(tornadio.SocketConnection):
 
     def user_logout(self, channel):
         print 'DYING INTENTIONALLY'
-        self.unsubscribe_all()
+        # self.unsubscribe_all()
         self.close()
 
     def on_message(self, message):
@@ -129,40 +130,41 @@ class NotifConnection(tornadio.SocketConnection):
 
     def on_close(self):
         if self.user and self.user.username:
-            print 'CLOSING', self.user.username
-            try:
-                self.connection_store[self.user.username].remove(self)
-            except:
-                pass
-            if self.user and self.user.username and (not self.connection_store.get(self.user.username, None)):
+            print 'CLOSING', self.user, self.user.username
+            if settings.MOBILE:
                 try:
-                    del self.connection_store[self.user.username]
+                    self.connection_store[self.user.username].remove(self)
                 except:
                     pass
+                if self.user and self.user.username and (not self.connection_store.get(self.user.username, None)):
+                    try:
+                        del self.connection_store[self.user.username]
+                    except:
+                        pass
         for channel in self.subscribed:
             try:
                 queue.master.get(channel).unsubscribe(self)
             except:
                 pass
         self.subscribed.clear()
-        if self.user and self.user.username:
-            if not self.connection_store.get(self.user.username, None):
-                self.sendToAllNearbyButSelf( {'command': 'bye', 'name': self.user.username } )
+        if settings.MOBILE:
+            if self.user and self.user.username:
+                if not self.connection_store.get(self.user.username, None):
+                    self.sendToAllNearbyButSelf( {'command': 'bye', 'name': self.user.username } )
         self.user = None
 
     def envelope_received(self, envelope):
         self.send( envelope )
 
-#use the routes classmethod to build the correct resource
-NotifRouter = tornadio.get_router(NotifConnection)
-
 kwargs = dict(
-    enabled_protocols = settings.NOTIFY_PROTOCOLS,
+    enabled_protocols = settings.NOTIFY_TRANSPORTS,
     # flash_policy_port = 843,
     # flash_policy_file = op.join(ROOT, 'flashpolicy.xml'),
     socket_io_port = settings.NOTIFY_PORT,
     #static_path=os.path.join(os.path.dirname(__file__), "static"),
     #static_url_prefix='/static/',
+    session_expiry = 15,
+    session_check_interval = 5,
 )
 
 if settings.NOTIFY_SECURE:
@@ -170,6 +172,9 @@ if settings.NOTIFY_SECURE:
 
 if not settings.PRODUCTION:
     kwargs['debug'] = True
+
+#use the routes classmethod to build the correct resource
+NotifRouter = tornadio.get_router(NotifConnection, settings=kwargs)
 
 #configure the Tornado application
 application = tornado.web.Application(
