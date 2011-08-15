@@ -26,14 +26,20 @@ class FanoutConnection(object):
     def __init__(self, HOST=settings.FANOUT_HOST, PORT=settings.FANOUT_PORT):
         self._socket = None
 
+        self.HOST = HOST
+        self.PORT = PORT
+
+        self.connect()
+
+    def connect(self):
         s = None
         hostinfo = []
         try:
-            hostinfo = socket.getaddrinfo(HOST, PORT, socket.AF_UNSPEC, socket.SOCK_STREAM)
+            hostinfo = socket.getaddrinfo(self.HOST, self.PORT, socket.AF_UNSPEC, socket.SOCK_STREAM)
         except:
             import traceback
             traceback.print_exc()
-            print "can't resolve", HOST, PORT
+            print "can't resolve", self.HOST, self.PORT
         for res in hostinfo:
             af, socktype, proto, canonname, sa = res
             try:
@@ -59,6 +65,10 @@ class FanoutConnection(object):
     def yell(self, who, data=None, json_data=None):
         if not json_data:
             json_data = json.dumps( {'to': who, 'msg': data}, cls=CustomEncoder )
+        
+        if not self._socket:
+            self.connect()
+
         if self._socket:
             msg = (unicode(len(json_data)) + u'\n' + json_data).encode('utf-8')
             try:
