@@ -208,7 +208,8 @@ if __name__ == "__main__":
     ssl_options = None
     if settings.NOTIFY_SECURE:
         ssl_options={
-               "certfile": "/root/notify.tradehill.com.crt",
+            #"certfile": "/etc/nginx/ssl/tradehill.com/tradehill.com.crt",
+               "certfile": "/root/notify.crt",
                "keyfile": "/root/dec.key",
            }
     
