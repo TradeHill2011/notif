@@ -22,6 +22,7 @@ engine = import_module(settings.SESSION_ENGINE)
 from django.contrib.auth import *
 
 import spatial
+import types
 
 def get_user_by_session(session):
     try:
@@ -49,6 +50,14 @@ class NotifConnection(tornadio.SocketConnection):
     messagehandler = []
     messagehandler.append({"match": {"command":"subscribe","channels":types.ListType}, "callback": ["m_channelsubscribe"]})
     messagehandler.append({"match": {"command":"unsubscribe","channels":types.ListType}, "callback": ["m_channelunsubscribe"]})
+    messagehandler.append({"match": {"command":"locationpublish","lat":types.FloatType,"lng": types.FloatType}, "callback": ["m_location_publish"]})
+
+    def m_location_publish(self,message):
+        spatial.login(self.user.username, self, [message.lat,message.lng])
+
+    def newspatialuser(self,message):
+        pass
+        
 
     def m_channelsubscribe(self,message):
         for channel in message['channels']:
