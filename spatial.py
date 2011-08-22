@@ -1,24 +1,52 @@
-from pymongo import Connection
+import pymongo
 import time
 
-connection = Connection('localhost', 27017)
-usercollection = connection.geodb.users
+class geo_notify():
+    def __init__(self,queue):
+        self.queue = queue
+        self.connection = pymongo.Connection('localhost', 27017)
+        self.usercollection = self.connection.geodb.users
 
-def login(user,connection,loc):
-    usercollection.insert({"user": user, "time": time.time(), "connection": connection, "loc": loc})
+    def locationpublish(self,user,sessionid):
+        # to notify user via the connection of new users nearby
 
-def logout(user,connection):
-    usercollection.remove({"user":user,"connection":connection})
+        self.usercollection.remove({"username": user.username,"sessionid":sessionid})
+        self.usercollection.insert({"username": user.username, "sharelocation": user.sharelocation, "time": time.time(), "sessionid": sessionid, "loc": user.loc})
 
-def neighbours(user):
-    user = usercollection.find_one({"user": user})
-    for nearuser in usercollection.find( { "loc" : { "$near" : user[unicode('loc')] } } ).limit(20):
-        print (nearuser)
 
-def test():
-    user_spatial_login("testuser1",1,[5,5])
-    user_spatial_login("testuser2",2,[3,2])
-    user_spatial_login("testuser3",3,[7,2])
-    user_spatial_login("testuser4",4,[3,5])
-    getnearuser("testuser1")
-    usercollection.remove()
+        n = self.userneighbours(user)
+
+        # inform user about neighbours
+        self.message(sessionid,{ "command": "geo_neighbours", "data": n.keys()})
+
+        # inform neighbours about user
+        for nuser in n.itervalues():
+            map(lambda sessionid: self.message(sessionid,{ "command": "geo_neighbour_add", "data": user.username }),nuser['sessionid'])
+
+    def message(self,sessionid,data):
+        self.queue.master.get('#' + sessionid).send(data)
+            
+    def logout(self,user,sessionid):
+        n = self.userneighbours(user)
+        for nuser in n:
+            map(lambda sessionid: self.message(sessionid,{ "command": "geo_neighbour_del", "data": user.username }),n['sessionid'])
+        self.usercollection.remove({"user":user,"sessionid":sessionid})
+
+    def userneighbours(self,user):
+        n = {}
+        for nuser in self.neighbours(user.loc):
+            print ("WORKING ON",nuser)
+            if (nuser['username'] != user.username):
+                if (n.has_key(nuser['username'])):
+                    n[nuser['username']]['sessionid'].append(nuser['sessionid'])
+                else:
+                    n[nuser['username']] = {'sessionid' : [ nuser['sessionid']] }
+        return n
+
+
+    def neighbours(self,loc):
+        data = []
+        for nearuser in self.usercollection.find( { "sharelocation": True, "loc" : { "$near" :  loc } }, {"username": True, "sessionid": True} ).limit(20):
+            data.append(nearuser)
+        return data
+

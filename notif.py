@@ -21,6 +21,7 @@ engine = import_module(settings.SESSION_ENGINE)
 
 from django.contrib.auth import *
 
+from TradeHill.models import *
 import spatial
 import types
 
@@ -30,6 +31,8 @@ def get_user_by_session(session):
         backend_path = session[BACKEND_SESSION_KEY]
         backend = load_backend(backend_path)
         user = backend.get_user(user_id) or None
+        user.sharelocation = True # temporary, put this in a db
+        
     except KeyError:
         user = None
     return user
@@ -53,12 +56,9 @@ class NotifConnection(tornadio.SocketConnection):
     messagehandler.append({"match": {"command":"locationpublish","lat":types.FloatType,"lng": types.FloatType}, "callback": ["m_location_publish"]})
 
     def m_location_publish(self,message):
-        spatial.login(self.user.username, self, [message.lat,message.lng])
-
-    def newspatialuser(self,message):
-        pass
+        self.user.loc = [message['lat'],message['lng']]
+        geo_notify.locationpublish(self.user, self.session.session_key)
         
-
     def m_channelsubscribe(self,message):
         for channel in message['channels']:
                 print 'asked for', channel
@@ -68,7 +68,7 @@ class NotifConnection(tornadio.SocketConnection):
                     print 'SECURITY PROBLEM @ in channel', channel
                 else:
                     self.subscribe(channel)
-
+        
     def m_channelunsubscribe(self,message):
         for channel in message['channels']:
             if channel.startswith('#'):
@@ -77,27 +77,28 @@ class NotifConnection(tornadio.SocketConnection):
                 print 'SECURITY PROBLEM @ in channel', channel
             else:
                 self.unsubscribe(channel)
-    
-
+        
+        
     def on_open(self, *args, **kwargs):
         self.subscribed = set()
-
+        
     def user_login(self, channel):
         if self.user:
             print 'CONNECTION REUSE - DYING'
             # self.unsubscribe_all()
             self.close()
             return
-        session = engine.SessionStore(channel[1:])
-        self.user = get_user_by_session(session)
-        print 'WHAT USER', self.user, session
+        self.session = engine.SessionStore(channel[1:])
+        self.user = get_user_by_session(self.session)
+        
+        print 'WHAT USER', self.user, self.session
         self.session_key = channel[1:]
         self.subscribe( '#' + self.session_key )
         if self.user:
             self.subscribe( '@' + self.user.username )
             if not settings.MOBILE:
                 return
-
+        
             self.connection_store.setdefault(self.user.username, set()).add(self)
             for connection_name in self.connection_store.keys():
                 if self.user.username != connection_name: # inform me about all users
@@ -140,6 +141,7 @@ class NotifConnection(tornadio.SocketConnection):
 
 
     def on_message(self, message):
+        print("MSGIN",message)
         if not (self.dispatch_message(message)):                    
             print 'UNPARSED MESSAGE', message
 
@@ -194,7 +196,8 @@ class NotifConnection(tornadio.SocketConnection):
                 queue.master.get(channel).unsubscribe(self)
             except:
                 pass
-            
+
+        geo_notify.logout(self.user,self.session.session_key)
         self.subscribed.clear()
         if settings.MOBILE:
             if self.user and self.user.username:
@@ -236,6 +239,7 @@ if __name__ == "__main__":
     logging.getLogger().setLevel(logging.DEBUG)
 
     queue.start_queue(settings.FANOUT_HOST, settings.FANOUT_PORT)
+    geo_notify = spatial.geo_notify(queue)
 
     ssl_options = None
     if settings.NOTIFY_SECURE:
