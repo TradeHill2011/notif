@@ -56,8 +56,7 @@ class NotifConnection(tornadio.SocketConnection):
     messagehandler.append({"match": {"command":"locationpublish","lat":types.FloatType,"lng": types.FloatType}, "callback": ["m_location_publish"]})
 
     def m_location_publish(self,message):
-        self.user.loc = [message['lat'],message['lng']]
-        geo_notify.locationpublish(self.user, self.session.session_key)
+        geo_notify.locationpublish(self.user, [message['lat'],message['lng']], self.session.session_key)
         
     def m_channelsubscribe(self,message):
         for channel in message['channels']:
@@ -197,7 +196,7 @@ class NotifConnection(tornadio.SocketConnection):
             except:
                 pass
 
-        geo_notify.logout(self.user,self.session.session_key)
+        geo_notify.logout(self.session.session_key)
         self.subscribed.clear()
         if settings.MOBILE:
             if self.user and self.user.username:
