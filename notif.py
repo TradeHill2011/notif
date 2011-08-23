@@ -20,12 +20,19 @@ from django.utils.importlib import import_module
 engine = import_module(settings.SESSION_ENGINE)
 
 from django.contrib.auth import *
+
+from TradeHill.models import *
+import spatial
+import types
+
 def get_user_by_session(session):
     try:
         user_id = session[SESSION_KEY]
         backend_path = session[BACKEND_SESSION_KEY]
         backend = load_backend(backend_path)
         user = backend.get_user(user_id) or None
+        user.sharelocation = True # temporary, put this in a db
+        
     except KeyError:
         user = None
     return user
@@ -44,43 +51,16 @@ class NotifConnection(tornadio.SocketConnection):
     user = None
     session_table = {}
 
-    def on_open(self, *args, **kwargs):
-        self.subscribed = set()
+    messagehandler = []
+    messagehandler.append({"match": {"command":"subscribe","channels":types.ListType}, "callback": ["m_channelsubscribe"]})
+    messagehandler.append({"match": {"command":"unsubscribe","channels":types.ListType}, "callback": ["m_channelunsubscribe"]})
+    messagehandler.append({"match": {"command":"locationpublish","lat":types.FloatType,"lng": types.FloatType}, "callback": ["m_location_publish"]})
 
-    def user_login(self, channel):
-        if self.user:
-            print 'CONNECTION REUSE - DYING', self.user, channel
-            self.unsubscribe_all(channel)
-            # self.close()
-            return
-        session = engine.SessionStore(channel[1:])
-        self.user = get_user_by_session(session)
-        print 'WHAT USER', self.user, session
-        self.session_key = channel[1:]
-        self.subscribe( '#' + self.session_key )
-        if self.user:
-            self.subscribe( '@' + self.user.username, session_key=self.session_key )
-
-            if not settings.MOBILE:
-                return
-
-            self.connection_store.setdefault(self.user.username, set()).add(self)
-
-            for connection_name in self.connection_store.keys():
-                if self.user.username != connection_name: # inform me about all users
-                    self.send( {'to': '@' + self.user.username, 'msg': {'command': 'hello', 'name': connection_name}} )
-            if len( self.connection_store.setdefault(self.user.username, set()) ) == 1: # hi, i'm new
-                self.sendToAllNearbyButSelf( {'command': 'hello', 'name': self.user.username } )
-
-    def user_logout(self, channel):
-        print 'DYING INTENTIONALLY', self.user, channel
-        self.unsubscribe_all(channel)
-        # self.close()
-
-    def on_message(self, message):
-        print 'HELLO', message
-        if message['command'] == 'subscribe':
-            for channel in message['channels']:
+    def m_location_publish(self,message):
+        geo_notify.locationpublish(self.user, [message['lat'],message['lng']], self.session.session_key)
+        
+    def m_channelsubscribe(self,message):
+        for channel in message['channels']:
                 print 'asked for', channel
                 if channel.startswith('#'):
                     self.user_login(channel)
@@ -88,16 +68,82 @@ class NotifConnection(tornadio.SocketConnection):
                     print 'SECURITY PROBLEM @ in channel', channel
                 else:
                     self.subscribe(channel)
-        elif message['command'] == 'unsubscribe':
-            for channel in message['channels']:
-                if channel.startswith('#'):
-                    self.user_logout(channel)
-                elif channel.startswith('@'):
-                    print 'SECURITY PROBLEM @ in channel', channel
-                else:
-                    self.unsubscribe(channel)
-        else:
-            print 'COMMAND', message
+        
+    def m_channelunsubscribe(self,message):
+        for channel in message['channels']:
+            if channel.startswith('#'):
+                self.user_logout(channel)
+            elif channel.startswith('@'):
+                print 'SECURITY PROBLEM @ in channel', channel
+            else:
+                self.unsubscribe(channel)
+        
+        
+    def on_open(self, *args, **kwargs):
+        self.subscribed = set()
+        
+    def user_login(self, channel):
+        if self.user:
+            print 'CONNECTION REUSE - DYING', self.user, channel
+            self.unsubscribe_all(channel)
+            # self.close()
+            return
+        self.session = engine.SessionStore(channel[1:])
+        self.user = get_user_by_session(self.session)
+        
+        print 'WHAT USER', self.user, self.session
+        self.session_key = channel[1:]
+        self.subscribe( '#' + self.session_key )
+        if self.user:
+            self.subscribe( '@' + self.user.username, session_key=self.session_key )
+            if not settings.MOBILE:
+                return
+        
+            self.connection_store.setdefault(self.user.username, set()).add(self)
+            for connection_name in self.connection_store.keys():
+                if self.user.username != connection_name: # inform me about all users
+                    self.send( {'to': '@' + self.user.username, 'msg': {'command': 'hello', 'name': connection_name}} )
+#            if len( self.connection_store.setdefault(self.user.username, set()) ) == 1: # hi, i'm new
+#                self.sendToAllNearbyButSelf( {'command': 'hello', 'name': self.user.username } )
+
+    def user_logout(self, channel):
+        print 'DYING INTENTIONALLY', self.user, channel
+        self.unsubscribe_all(channel)
+        # self.close()
+
+    def dispatch_message(self,message):
+        
+        def matchmessage(match,message):    
+            def matchkey(key,match,message):
+                if (key in message):
+                    if ((type(match[key]) == types.StringType) and (match[key] == message[key])):
+                        return True
+                    if ((type(match[key])) == type) and (match[key] == type(message[key])):
+                        return True
+                    if ((type(match[key])) == types.FunctionType):
+                        return bool(match[key](message[key]))
+
+                    
+            for key in match:
+                if not matchkey(key,match,message):
+                    return False
+
+            return True
+            
+
+        matched = False
+        for messagehandler in self.messagehandler:
+            if (matchmessage(messagehandler['match'],message)):
+                matched = True
+                map(lambda handler: getattr(self,handler)(message), messagehandler['callback'])
+                
+        return matched
+
+
+    def on_message(self, message):
+        print("MSGIN",message)
+        if not (self.dispatch_message(message)):                    
+            print 'UNPARSED MESSAGE', message
 
     def sendToAllNearbyButSelf(self, msg, username=None):
         if not username:
@@ -165,10 +211,12 @@ class NotifConnection(tornadio.SocketConnection):
                     self.sendToAllNearbyButSelf( {'command': 'bye', 'name': username }, username=username )
 
         print 'ENDUNSUB ALL: ', self.connection_store, self
+
+        geo_notify.logout(self.session.session_key)
         self.user = None
 
     def on_close(self):
-        self.unsubscribe_all
+        self.unsubscribe_all()
 
     def envelope_received(self, envelope):
         self.send( envelope )
@@ -204,12 +252,12 @@ if __name__ == "__main__":
     logging.getLogger().setLevel(logging.DEBUG)
 
     queue.start_queue(settings.FANOUT_HOST, settings.FANOUT_PORT)
+    geo_notify = spatial.geo_notify(queue)
 
     ssl_options = None
     if settings.NOTIFY_SECURE:
         ssl_options={
-            #"certfile": "/etc/nginx/ssl/tradehill.com/tradehill.com.crt",
-               "certfile": "/root/notify.crt",
+               "certfile": "/root/notify.tradehill.com.crt",
                "keyfile": "/root/dec.key",
            }
     
