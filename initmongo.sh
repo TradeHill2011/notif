@@ -1,0 +1,1 @@
+cat initmongo.mongo | mongo
