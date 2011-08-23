@@ -54,6 +54,7 @@ class NotifConnection(tornadio.SocketConnection):
     messagehandler.append({"match": {"command":"subscribe","channels":types.ListType}, "callback": ["m_channelsubscribe"]})
     messagehandler.append({"match": {"command":"unsubscribe","channels":types.ListType}, "callback": ["m_channelunsubscribe"]})
     messagehandler.append({"match": {"command":"locationpublish","lat":types.FloatType,"lng": types.FloatType}, "callback": ["m_location_publish"]})
+    messagehandler.append({"match": {"command":"locationpublish","lat":types.IntType,"lng": types.IntType}, "callback": ["m_location_publish"]})
 
     def m_location_publish(self,message):
         geo_notify.locationpublish(self.user, [message['lat'],message['lng']], self.session.session_key)
