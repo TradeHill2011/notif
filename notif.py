@@ -49,6 +49,7 @@ class NotifConnection(tornadio.SocketConnection):
     connection_store = {}
     name = None
     user = None
+    session_table = {}
 
     messagehandler = []
     messagehandler.append({"match": {"command":"subscribe","channels":types.ListType}, "callback": ["m_channelsubscribe"]})
@@ -84,9 +85,9 @@ class NotifConnection(tornadio.SocketConnection):
         
     def user_login(self, channel):
         if self.user:
-            print 'CONNECTION REUSE - DYING'
-            # self.unsubscribe_all()
-            self.close()
+            print 'CONNECTION REUSE - DYING', self.user, channel
+            self.unsubscribe_all(channel)
+            # self.close()
             return
         self.session = engine.SessionStore(channel[1:])
         self.user = get_user_by_session(self.session)
@@ -95,7 +96,7 @@ class NotifConnection(tornadio.SocketConnection):
         self.session_key = channel[1:]
         self.subscribe( '#' + self.session_key )
         if self.user:
-            self.subscribe( '@' + self.user.username )
+            self.subscribe( '@' + self.user.username, session_key=self.session_key )
             if not settings.MOBILE:
                 return
         
@@ -107,9 +108,9 @@ class NotifConnection(tornadio.SocketConnection):
 #                self.sendToAllNearbyButSelf( {'command': 'hello', 'name': self.user.username } )
 
     def user_logout(self, channel):
-        print 'DYING INTENTIONALLY'
-        # self.unsubscribe_all()
-        self.close()
+        print 'DYING INTENTIONALLY', self.user, channel
+        self.unsubscribe_all(channel)
+        # self.close()
 
     def dispatch_message(self,message):
         
@@ -145,24 +146,28 @@ class NotifConnection(tornadio.SocketConnection):
         if not (self.dispatch_message(message)):                    
             print 'UNPARSED MESSAGE', message
 
-    def sendToAllNearbyButSelf(self, msg):
-        print 'SENDTOALLBUT', self.user.username, self.connection_store
+    def sendToAllNearbyButSelf(self, msg, username=None):
+        if not username:
+            username = self.user.username
+        print 'SENDTOALLBUT', username, self.connection_store
         for name, conns in self.connection_store.items():
-            if name != self.user.username:
-                print 'SENDING', name, conns, self.user.username
+            if name != username:
+                print 'SENDING', name, conns, username
                 for conn in conns:
                     try:
                         conn.send( {'to': '@' + name, 'msg': msg} )
                     except:
                         pass
 
-    def subscribe(self, channel):
-        print 'subscribing', channel
+    def subscribe(self, channel, session_key = None):
+        if session_key:
+            self.session_table[session_key] = channel
+        print 'subscribing', channel, session_key
         queue.master.get(channel).subscribe(self)
         self.subscribed.add(channel)
 
     def unsubscribe(self, channel):
-        print 'unsubscribing', channel
+        print 'unsubscribing', channel, self.session_table.get(channel)
         try:
             queue.master.get(channel).unsubscribe(self)
         except:
@@ -172,38 +177,47 @@ class NotifConnection(tornadio.SocketConnection):
         except:
             pass
     
-    def unsubscribe_all(self):
+    def unsubscribe_all(self, channel=None):
+        if channel:
+            username = self.session_table.get(channel[1:], None)
+            if username:
+                username = username[1:]
+                del self.session_table[channel[1:]]
+        
+        if not username:
+            username = (self.user and self.user.username)
+
+        print 'UNSUB ALL', self.user, username, self.connection_store
+
         for channel in list(self.subscribed):
             self.unsubscribe(channel)
+        self.subscribed.clear()
 
-    def on_close(self):
-        if self.user and self.user.username:
-            print 'CLOSING', self.user, self.user.username
-            if settings.MOBILE:
+        if settings.MOBILE:
+            try:
+                for x in list(self.connection_store[username]):
+                    if x.session_key == channel[1:]:
+                        self.connection_store[username].remove(x)
+            except Exception, e:
+                print 'UNSUB ERROR', e
+                pass
+            if username and (not self.connection_store.get(username, None)):
                 try:
-                    self.connection_store[self.user.username].remove(self)
+                    del self.connection_store[username]
                 except:
                     pass
+    
+            if username:
+                if not self.connection_store.get(username, None):
+                    self.sendToAllNearbyButSelf( {'command': 'bye', 'name': username }, username=username )
 
-                if self.user and self.user.username and (not self.connection_store.get(self.user.username, None)):
-                    try:
-                        del self.connection_store[self.user.username]
-                    except:
-                        pass
-                    
-        for channel in self.subscribed:
-            try:
-                queue.master.get(channel).unsubscribe(self)
-            except:
-                pass
+        print 'ENDUNSUB ALL: ', self.connection_store, self
 
         geo_notify.logout(self.session.session_key)
-        self.subscribed.clear()
-        if settings.MOBILE:
-            if self.user and self.user.username:
-                if not self.connection_store.get(self.user.username, None):
-                    self.sendToAllNearbyButSelf( {'command': 'bye', 'name': self.user.username } )
         self.user = None
+
+    def on_close(self):
+        self.unsubscribe_all()
 
     def envelope_received(self, envelope):
         self.send( envelope )
