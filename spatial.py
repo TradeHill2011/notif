@@ -6,9 +6,10 @@ class geo_notify():
         self.queue = queue
         self.connection = pymongo.Connection('localhost', 27017)
         self.usercollection = self.connection.geodb.users
-
+        self.usercollection.remove()
     def locationpublish(self,user,loc,sessionid):
         # to notify user via the connection of new users nearby
+
 
         self.usercollection.remove({"username": user.username,"sessionid":sessionid})
         self.usercollection.insert({"username": user.username, "sharelocation": user.sharelocation, "time": time.time(), "sessionid": sessionid, "loc": loc})
