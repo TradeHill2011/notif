@@ -9,56 +9,59 @@ class geo_notify():
         self.usercollection.remove()
 
     def locationpublish(self,user,loc,sessionid):
-        # to notify user via the connection of new users nearby
-        print (dir(user))
+        user = User(self, {"id": user.id, "name": user.username, "time": time.time(), "sessionid": sessionid, "loc": loc } )
+
+        # save to db
+        user.save()
         
-        user = {"userid": user.id, "username": user.username, "sharelocation": user.sharelocation, "time": time.time(), "sessionid": sessionid, "loc": loc}
-
-        self.usercollection.remove({"sessionid":user['sessionid']})
-        self.usercollection.insert(user)
-        
-        n = self.userneighbours(user)
-
-        # inform user about neighbours
-
-        
-        self.message(sessionid,{ "command": "geo_list", "data": })
-
-        # inform neighbours about user
-        for nuser in n.itervalues():
-            map(lambda sessionid: self.message(sessionid,{ "command": "geo_add", "data": { 'username': user['username'], 'userid': user['userid']} }),nuser['sessionid'])
-
-    def message(self,sessionid,data):
-        self.queue.master.get('#' + sessionid).send(data)
+        # send message to neighbours and inform user about neighbours
+        user.announce()
             
     def logout(self,sessionid):
-        user = self.usercollection.find_one({"sessionid":sessionid})
-        if not user:
+        userdata = self.usercollection.find_one({"sessionid":sessionid})
+        if not userdata:
             return
-        print ("found user",user)
-        self.usercollection.remove({"sessionid":sessionid})
-        n = self.userneighbours(user)
-        for nuser in n.itervalues():
-            map(lambda sessionid: self.message(sessionid,{ "command": "geo_del", "data": user['userid'] }),nuser['sessionid'])
+
+        User(self,userdata).logout()
+        
+class User():
+    def __init__(self,master,data):
+        self.master = master
+        
+        for key in data.keys():
+            setattr(self,key,data[key])
+
+        self.summary = { "name": self.name, "id": self.id, "count": 1 }
+
+        print ("SPAWNING USER OBJECT",self.summary)
+
+    def logout(self):
+        self.master.usercollection.remove({"sessionid": self.sessionid})    
+        map(lambda nuser: nuser.message({ "command": "geo_del", "data": self.summary }), self.neighbours())
+
+    def announce(self):
+        nlist = {}
+        # inform neighbours about user        
+        for nuser in self.neighbours():
+            nuser.message({ "command": "geo_add", "data": self.summary })
             
-
-    def userneighbours(self,user):
-        n = {}
-        for nuser in self.neighbours(user['loc']):
-            if (nuser['userid'] == user['userid']):
-                continue
-                
-            if (n.has_key(nuser['userid'])):
-                n[nuser['userid']]['sessionid'].append(nuser['sessionid'])
+            if not nlist.has_key(nuser.id):
+                nlist[nuser.id] = nuser.summary
             else:
-                n[nuser['userid']] = {'username': nuser['username'], 'sessionid' : [ nuser['sessionid']] }
-        print (n)
-        return n
+                nlist[nuser.id]['count'] += 1
+                
+        # inform user about neighbours
+        self.message({ "command": "geo_list", "data": nlist.values() })
 
 
-    def neighbours(self,loc):
-        data = []
-        for nearuser in self.usercollection.find( { "loc" : { "$near" :  loc } } ).limit(20):
-            data.append(nearuser)
-        return data
+    def save(self):
+        self.master.usercollection.remove({"sessionid": self.sessionid})
+        self.master.usercollection.insert({"sessionid": self.sessionid, "id": self.id, "name": self.name, "loc": self.loc })
+    def neighbours(self):
+        for nearuserdata in self.master.usercollection.find( { "loc" : { "$near" : self.loc } } ).limit(20):
+            if nearuserdata['id'] != self.id:
+                yield User(self.master,nearuserdata)
 
+
+    def message(self,data):
+        self.master.queue.master.get('#' + self.sessionid).send(data)

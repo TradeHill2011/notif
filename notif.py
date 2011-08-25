@@ -28,9 +28,11 @@ import types
 def get_user_by_session(session):
     try:
         user_id = session[SESSION_KEY]
+        
         backend_path = session[BACKEND_SESSION_KEY]
         backend = load_backend(backend_path)
         user = backend.get_user(user_id) or None
+        print ("GOT USER",user,user.id)
         user.sharelocation = True # temporary, put this in a db
         
     except KeyError:
@@ -58,8 +60,9 @@ class NotifConnection(tornadio.SocketConnection):
     messagehandler.append({"match": {"command":"locationpublish","lat":types.IntType,"lng": types.IntType}, "callback": ["m_location_publish"]})
 
     def m_location_publish(self,message):
-        geo_notify.locationpublish(self.user, [message['lat'],message['lng']], self.session.session_key)
-        
+        if (hasattr(self,"session")):
+            geo_notify.locationpublish(self.user, [message['lat'],message['lng']], self.session.session_key)
+
     def m_channelsubscribe(self,message):
         for channel in message['channels']:
                 print 'asked for', channel
@@ -101,9 +104,9 @@ class NotifConnection(tornadio.SocketConnection):
                 return
         
             self.connection_store.setdefault(self.user.username, set()).add(self)
-            for connection_name in self.connection_store.keys():
-                if self.user.username != connection_name: # inform me about all users
-                    self.send( {'to': '@' + self.user.username, 'msg': {'command': 'hello', 'name': connection_name}} )
+#            for connection_name in self.connection_store.keys():
+#                if self.user.username != connection_name: # inform me about all users
+#                    self.send( {'to': '@' + self.user.username, 'msg': {'command': 'hello', 'name': connection_name}} )
 #            if len( self.connection_store.setdefault(self.user.username, set()) ) == 1: # hi, i'm new
 #                self.sendToAllNearbyButSelf( {'command': 'hello', 'name': self.user.username } )
 
@@ -178,6 +181,7 @@ class NotifConnection(tornadio.SocketConnection):
             pass
     
     def unsubscribe_all(self, channel=None):
+        username = None
         if channel:
             username = self.session_table.get(channel[1:], None)
             if username:
@@ -193,6 +197,8 @@ class NotifConnection(tornadio.SocketConnection):
             self.unsubscribe(channel)
         self.subscribed.clear()
 
+        
+
         if settings.MOBILE:
             try:
                 for x in list(self.connection_store[username]):
@@ -206,14 +212,17 @@ class NotifConnection(tornadio.SocketConnection):
                     del self.connection_store[username]
                 except:
                     pass
+
+        if (hasattr(self,"session")):
+            geo_notify.logout(self.session.session_key)
     
-            if username:
-                if not self.connection_store.get(username, None):
-                    self.sendToAllNearbyButSelf( {'command': 'bye', 'name': username }, username=username )
+#            if username:
+#                if not self.connection_store.get(username, None):
+#                    self.sendToAllNearbyButSelf( {'command': 'bye', 'name': username }, username=username )
 
         print 'ENDUNSUB ALL: ', self.connection_store, self
 
-        geo_notify.logout(self.session.session_key)
+
         self.user = None
 
     def on_close(self):
@@ -249,8 +258,8 @@ application = tornado.web.Application(
     )
 
 if __name__ == "__main__":
-    import logging
-    logging.getLogger().setLevel(logging.DEBUG)
+#    import logging
+#    logging.getLogger().setLevel(logging.INFO)
 
     queue.start_queue(settings.FANOUT_HOST, settings.FANOUT_PORT)
     geo_notify = spatial.geo_notify(queue)
