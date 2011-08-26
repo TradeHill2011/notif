@@ -62,7 +62,7 @@ class FanoutConnection(object):
         else:
             print "Can't connect to fanout server."
 
-    def yell(self, who, data=None, json_data=None):
+    def _yell(self, who, data=None, json_data=None):
         if not json_data:
             json_data = json.dumps( {'to': who, 'msg': data}, cls=CustomEncoder )
         
@@ -76,6 +76,12 @@ class FanoutConnection(object):
             except:
                 traceback.print_exc()
                 self._socket = None
+
+    def yell(self, *args, **kwargs):
+        try:
+            self._yell(*args, **kwargs)
+        except Exception, e:
+            print 'CLISOCK Connection Exception:', e
 
     def close(self):
         try:
