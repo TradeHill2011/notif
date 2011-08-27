@@ -9,7 +9,7 @@ class geo_notify():
         self.usercollection.remove()
 
     def locationpublish(self,user,loc,sessionid):
-        user = User(self, {"id": user.id, "name": user.username, "time": time.time(), "sessionid": sessionid, "loc": loc } )
+        user = User(self, {"id": user.id, "nickname": user.get_profile().nickname, "time": time.time(), "sessionid": sessionid, "loc": loc } )
 
         # save to db
         user.save()
@@ -31,7 +31,7 @@ class User():
         for key in data.keys():
             setattr(self,key,data[key])
 
-        self.summary = { "name": self.name, "id": self.id, "count": 1 }
+        self.summary = { "nickname": self.nickname, "id": self.id, "count": 1 }
 
         print ("SPAWNING USER OBJECT",self.summary)
 
@@ -56,7 +56,7 @@ class User():
 
     def save(self):
         self.master.usercollection.remove({"sessionid": self.sessionid})
-        self.master.usercollection.insert({"sessionid": self.sessionid, "id": self.id, "name": self.name, "loc": self.loc })
+        self.master.usercollection.insert({"sessionid": self.sessionid, "id": self.id, "nickname": self.nickname, "loc": self.loc })
     def neighbours(self):
         for nearuserdata in self.master.usercollection.find( { "loc" : { "$near" : self.loc } } ).limit(20):
             if nearuserdata['id'] != self.id:
