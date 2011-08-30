@@ -61,7 +61,10 @@ class NotifConnection(tornadio.SocketConnection):
 
     def m_location_publish(self,message):
         if (hasattr(self,"session")):
-            geo_notify.locationpublish(self.user, [message['lat'],message['lng']], self.session.session_key)
+            if self.user:
+                geo_notify.locationpublish(self.user, [message['lat'],message['lng']], self.session.session_key)
+            else:
+                print 'HAS SESSION BUT NO USER', self
 
     def m_channelsubscribe(self,message):
         for channel in message['channels']:
