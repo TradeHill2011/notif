@@ -39,7 +39,7 @@ class FanoutConnection(object):
         except:
             import traceback
             traceback.print_exc()
-            print "can't resolve", self.HOST, self.PORT
+            print "WEIRDNESS: Can't resolve", self.HOST, self.PORT
         for res in hostinfo:
             af, socktype, proto, canonname, sa = res
             try:
@@ -48,6 +48,7 @@ class FanoutConnection(object):
                 s = None
                 continue
             try:
+                #s.settimeout(.250)
                 s.connect(sa)
             except socket.error, msg:
                 s.close()
@@ -60,7 +61,7 @@ class FanoutConnection(object):
             self._socket.setblocking(1)
             self._socket.settimeout(0.1)
         else:
-            print "Can't connect to fanout server."
+            print "WEIRDNESS: Can't connect to fanout server."
 
     def _yell(self, who, data=None, json_data=None):
         if not json_data:
