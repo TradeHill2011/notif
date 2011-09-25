@@ -143,6 +143,7 @@ class NotifMaster(object):
         self.log(connection_id, 'terminating subscriptions')
 
         subscriptions = self.get_subscriptions_for_connection_id(connection_id)
+        subscriptions.sort() # this matters: # needs to unsubscribe before @ !!
         for channel in list(subscriptions):
             self.unsubscribe(conn, channel)
 
