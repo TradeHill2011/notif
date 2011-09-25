@@ -17,7 +17,8 @@ from django.conf import settings
 
 from notifprotocol import NotifConnectionFactory
 
-from spatial import GeoMaster
+if settings.MOBILE:
+    from spatial import GeoMaster
 
 kwargs = dict(
     enabled_protocols = settings.NOTIFY_TRANSPORTS,
@@ -50,7 +51,12 @@ if not settings.NOTIFY_SECURE:
 def main():
     queue.start_queue(settings.FANOUT_HOST, settings.FANOUT_PORT)
 
-    NotifRouter = tornadio.get_router(NotifConnectionFactory(queue_master=queue.master, geo_master=GeoMaster()), settings=kwargs)
+    if settings.MOBILE:
+        geo_master = GeoMaster()
+    else:
+        geo_master = None
+    
+    NotifRouter = tornadio.get_router(NotifConnectionFactory(queue_master=queue.master, geo_master=geo_master), settings=kwargs)
 
     #configure the Tornado application
     application = tornado.web.Application(

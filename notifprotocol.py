@@ -24,9 +24,10 @@ class NotifMaster(object):
         self.user_by_user_id = {}
 
         self.connection_ids_by_session_key = {}
-    
-        geo_master.set_notif_master(self)
-        self.geo_master = geo_master
+
+        if settings.MOBILE:
+            geo_master.set_notif_master(self)
+            self.geo_master = geo_master
 
     def log(self, *args, **kwargs):
         print 'MASTER: %s' % (' '.join( str(x) for x in args ), )
@@ -143,6 +144,9 @@ class NotifMaster(object):
             self.unsubscribe(conn, channel)
 
     def geo_publish(self, conn_or_connection_id, loc):
+        if not settings.MOBILE:
+            return
+
         conn, connection_id = self.to_conn_and_connection_id(conn_or_connection_id)
 
         connectionuser_ids = self.get_user_ids_for_connection_id( connection_id )
@@ -161,6 +165,9 @@ class NotifMaster(object):
         self.geo_master.locationpublish(user_internal_id=user.id, nickname=nickname, loc=loc, session_key=user.session_key)
 
     def geo_send(self, session_key, data):
+        if not settings.MOBILE:
+            return
+
         connection_ids = self.get_connection_ids_for_session_key( session_key )
         print 'SEND TO', connection_ids
 
@@ -242,6 +249,8 @@ class NotifConnection(NotifConnectionBase):
             self.unsubscribe( channel )
 
     def handle_locationpublish(self, message):
+        if not settings.MOBILE:
+            return
         self.log('LOCATIONPUBLISH' , message)
         self.notif_master.geo_publish( self, [message['lat'],message['lng']] )
 
