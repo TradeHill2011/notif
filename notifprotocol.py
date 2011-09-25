@@ -107,6 +107,7 @@ class NotifMaster(object):
         self.log(connection_id, 'wants to unsubscribe', channel)
 
         if channel.startswith('#'):
+            self.geo_publish( connection_id, loc=None)
             connectionsession_ids = self.get_connection_ids_for_session_key( channel[1:] )
             connectionsession_ids.remove( connection_id )
 
