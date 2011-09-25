@@ -2,6 +2,7 @@ import tornadio
 import sys
 import gc, pprint
 
+from django.conf import settings
 from notifhelp import unhandled_exception_handler, get_user_by_session_key
 
 class NotifConnectionFactory(object):
