@@ -59,11 +59,17 @@ class GeoUser(object):
 
     def update(self):
         self.data = self.geo_master.usercollection.find_one({ "session_key": self.data['session_key'] })
+        if not self.data:
+            self.data = {}
 
     def logout(self):
         self.log('LOGOUT', self.data)
         
         self.update()
+
+        if not self.data:
+            self.log('UPDATE FAILED FOR LOGOUT - NO DATA')
+            return
 
         # XXX: not good enough - need to keep track of who we announced to
         # reason: my neighbors are not neccessarily your neighbors.
