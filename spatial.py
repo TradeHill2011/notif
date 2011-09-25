@@ -1,66 +1,89 @@
 import pymongo
 import time
 
-class geo_notify():
-    def __init__(self,queue):
-        self.queue = queue
+class GeoMaster(object):
+    def __init__(self):
+        pass
+    
+    def set_notif_master(self, notif_master):
+        self.notif_master = notif_master
         self.connection = pymongo.Connection('localhost', 27017)
         self.usercollection = self.connection.geodb.users
         self.usercollection.remove()
 
-    def locationpublish(self,user,loc,sessionid):
-        profile  = user.get_profile()
-        user = User(self, {"id": user.id, "nickname": profile.nickname, "time": time.time(), "sessionid": sessionid, "loc": loc } )
+    def log(self, *args, **kwargs):
+        print 'GEOMASTER: %s' % (' '.join( str(x) for x in args ), )
 
-        # save to db
-        user.save()
-        
-        # send message to neighbours and inform user about neighbours
-        user.announce()
+    def locationpublish(self, user_internal_id, nickname, loc, session_key):
+        geouser = GeoUser(self, {"id": user_internal_id, "nickname": nickname, "time": time.time(), "session_key": session_key, "loc": loc } )
+        geouser.login()
             
-    def logout(self,sessionid):
-        userdata = self.usercollection.find_one({"sessionid":sessionid})
+    def logout(self, session_key):
+        userdata = self.usercollection.find_one({"session_key":session_key})
         if not userdata:
             return
 
-        User(self,userdata).logout()
-        
-class User():
-    def __init__(self,master,data):
-        self.master = master
-        for key in data.keys():
-            setattr(self,key,data[key])
-        self.summary = { "nickname": self.nickname, "id": self.id, "count": 1 }
-        print ("SPAWNING USER OBJECT",self.summary)
+        GeoUser(self, userdata).logout()
 
-    def logout(self):
-        self.master.usercollection.remove({"sessionid": self.sessionid})    
-        map(lambda nuser: nuser.message({ "command": "geo_del", "data": self.summary }), self.neighbours())
+    def send(self, session_key, data):
+        self.log( session_key, 'SEND', data )
+        self.notif_master.geo_send(session_key=session_key, data=data)
+        
+class GeoUser(object):
+    def __init__(self, geo_master, data):
+        self.geo_master = geo_master
+        self.data = data
+
+        self.log("SPAWNING GEOUSER OBJECT")
+
+    @property
+    def summary(self):
+        return dict( (x,y) for (x,y) in self.data.iteritems() if x in ('id', 'loc', 'nickname') )
+
+    def log(self, *args, **kwargs):
+        print 'GEOUSER %s: %s' % (self.summary, ' '.join( str(x) for x in args ), )
+
+    def login(self):
+        self.save()        
+        self.announce()
 
     def announce(self):
         nlist = {}
-        # inform neighbours about user        
-        for nuser in self.neighbours():
+        self.log('ANNOUNCING')
+
+        for nuser in self.get_neighbors():
             nuser.message({ "command": "geo_add", "data": self.summary })
             
-            if not nlist.has_key(nuser.id):
-                nlist[nuser.id] = nuser.summary
-            else:
-                nlist[nuser.id]['count'] += 1
-                
-        # inform user about neighbours
+            if not nlist.has_key(nuser.data['id']):
+                nlist[nuser.data['id']] = nuser.summary
+            
+        # inform user about neighbors
         self.message({ "command": "geo_list", "data": nlist.values() })
 
+    def logout(self):
+        self.geo_master.usercollection.remove({"session_key": self.data['session_key']})    
+        
+        # XXX: not good enough - need to keep track of who we announced to
+        # reason: my neighbors are not neccessarily your neighbors.
+        if not self.geo_master.usercollection.find({"id": self.data['id']}):
+            for nuser in self.get_neighbors():
+                nuser.message({ "command": "geo_del", "data": self.summary })
 
     def save(self):
-        self.master.usercollection.remove({"sessionid": self.sessionid})
-        self.master.usercollection.insert({"sessionid": self.sessionid, "id": self.id, "nickname": self.nickname, "loc": self.loc })
+        self.geo_master.usercollection.remove({
+                                            "session_key": self.data['session_key']
+                                         })
         
-    def neighbours(self):
-        for nearuserdata in self.master.usercollection.find( { "loc" : { "$near" : self.loc } } ).limit(20):
-            if nearuserdata['id'] != self.id:
-                yield User(self.master,nearuserdata)
+        self.geo_master.usercollection.insert(self.data)
+        
+    def get_neighbors(self):
+        for nearuserdata in self.geo_master.usercollection.find( { "loc" : { "$near" : self.data['loc'] } } ).limit(20):
+            if nearuserdata['id'] != self.data['id']:
+                yield GeoUser(self.geo_master,nearuserdata)
 
 
-    def message(self,data):
-        self.master.queue.master.get('#' + self.sessionid).send(data)
+    def message(self, data):
+        self.geo_master.send(self.data['session_key'], data)
+
+geo_notify = GeoMaster
+

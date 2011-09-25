@@ -93,7 +93,7 @@ class FanoutConnection(object):
 def main():
     conn = FanoutConnection()
     conn.yell( 'EVERYONE', 'frob' )
-    conn.yell( '@enki@bbq.io', 'secret' )
+    conn.yell( '@frob@example.net', 'secret' )
     conn.yell( 'LOST', 'lost' )
     conn.close()
 
